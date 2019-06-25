@@ -1,5 +1,10 @@
+use std::prelude::v1::*;
+
 use std::collections::HashSet;
 use std::fmt;
+use std::string::{String, ToString};
+use std::borrow::ToOwned;
+use std::vec::Vec;
 
 use array_tool::vec::{Intersect, Union};
 use serde_json::map::Entry;
