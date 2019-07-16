@@ -1026,33 +1026,26 @@ pub struct SelectorMut {
     value: Option<Value>,
 }
 
-fn replace_value<F: FnMut(&Value) -> Value>(tokens: Vec<String>, value: &mut Value, fun: &mut F) {
+fn collect_replace_value<F>(
+    tokens: Vec<String>,
+    value: &mut Value,
+    fun: &mut F,
+    buf: &mut Vec<(*const Value, String, Value)>,
+) -> Result<(), JsonPathError>
+where
+    F: FnMut(&Value) -> Option<Result<Value, JsonPathError>>,
+{
+    let last_idx = tokens.len() - 1;
     let mut target = value;
 
     for (i, token) in tokens.iter().enumerate() {
-        let target_once = target;
-        let is_last = i == tokens.len() - 1;
-        let target_opt = match *target_once {
-            Value::Object(ref mut map) => {
-                if is_last {
-                    let v = if let Some(v) = map.get(token) {
-                        fun(v)
-                    } else {
-                        return;
-                    };
+        let mut target_once = target;
+        let parent_ptr = target_once as *const Value;
 
-                    map.insert(token.clone(), v);
-                    return;
-                }
-                map.get_mut(token)
-            }
-            Value::Array(ref mut vec) => {
+        let target_opt = match target_once {
+            Value::Object(map) => map.get_mut(token),
+            Value::Array(vec) => {
                 if let Ok(x) = token.parse::<usize>() {
-                    if is_last {
-                        let v = { fun(&vec[x]) };
-                        vec[x] = v;
-                        return;
-                    }
                     vec.get_mut(x)
                 } else {
                     None
@@ -1066,7 +1059,21 @@ fn replace_value<F: FnMut(&Value) -> Value>(tokens: Vec<String>, value: &mut Val
         } else {
             break;
         }
+
+        if i == last_idx {
+            match fun(target) {
+                Some(Ok(ret)) => {
+                    buf.push((parent_ptr, tokens[last_idx].clone(), ret));
+                }
+                Some(Err(e)) => {
+                    return Err(e);
+                }
+                _ => {}
+            };
+        }
     }
+
+    Ok(())
 }
 
 impl SelectorMut {
@@ -1174,22 +1181,45 @@ impl SelectorMut {
         }
     }
 
-    pub fn replace_with<F: FnMut(&Value) -> Value>(
-        &mut self,
-        fun: &mut F,
-    ) -> Result<&mut Self, JsonPathError> {
+    pub fn try_replace_with<F>(&mut self, fun: &mut F) -> Result<&mut Self, JsonPathError>
+    where
+        F: FnMut(&Value) -> Option<Result<Value, JsonPathError>>,
+    {
         let paths = {
             let result = self.select()?;
             self.compute_paths(result)
         };
 
         if let Some(ref mut value) = &mut self.value {
+            let mut buf = Vec::new();
             for tokens in paths {
-                replace_value(tokens, value, fun);
+                collect_replace_value(tokens, value, fun, &mut buf)?
+            }
+
+            for (ptr, token, value) in buf {
+                match unsafe { std::mem::transmute::<*const Value, &mut Value>(ptr) } {
+                    Value::Object(ref mut map) => {
+                        map.insert(token, value);
+                    }
+                    Value::Array(ref mut vec) => {
+                        if let Ok(x) = token.parse::<usize>() {
+                            vec[x] = value;
+                        }
+                    }
+                    _ => {}
+                }
+                std::mem::forget(ptr);
             }
         }
 
         Ok(self)
+    }
+
+    pub fn replace_with<F: FnMut(&Value) -> Value>(
+        &mut self,
+        fun: &mut F,
+    ) -> Result<&mut Self, JsonPathError> {
+        self.try_replace_with(&mut |v| Some(Ok(fun(v))))
     }
 }
 
