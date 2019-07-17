@@ -463,6 +463,127 @@ where
     F: FnMut(&Value) -> Value,
 {
     let mut selector = SelectorMut::default();
-    let value = selector.str_path(path)?.value(value).replace_with(fun)?;
-    Ok(value.take().unwrap_or(Value::Null))
+    let _ = selector.str_path(path)?.value(value).replace_with(fun)?;
+    Ok(selector.take().unwrap_or(Value::Null))
+}
+
+/// Select JSON properties using a jsonpath and transform the result and then replace it. via closure that implements `FnMut` you can transform the selected results.
+/// but it is different with `replace_with` function. it support to skip or to abort. if return `None` keep the selected value, if return `Err` abort all replacement.
+///
+/// ```rust
+/// extern crate jsonpath_lib as jsonpath;
+/// #[macro_use] extern crate serde_json;
+///
+/// use serde_json::Value;
+/// use jsonpath::JsonPathError;
+/// 
+/// //
+/// // replace value
+/// //
+///
+/// let json_obj = json!({
+///     "school": {
+///         "friends": [
+///             {"name": "친구1", "age": 20},
+///             {"name": "친구2", "age": 20}
+///         ]
+///     },
+///     "friends": [
+///         {"name": "친구3", "age": 30},
+///         {"name": "친구4"}
+/// ]});
+///
+/// let result_obj = json!({
+///     "school": {
+///         "friends": [
+///             {"name": "친구1", "age": 40},
+///             {"name": "친구2", "age": 40}
+///         ]
+///     },
+///     "friends": [
+///         {"name": "친구3", "age": 30},
+///         {"name": "친구4"}
+/// ]});
+///
+/// let result =
+///     jsonpath::try_replace_with(json_obj.clone(), "$..[?(@.age == 20)].age", &mut |v| {
+///         let age = if let Value::Number(n) = v {
+///             n.as_u64().unwrap() * 2
+///         } else {
+///             0
+///         };
+///
+///         Some(Ok(json!(age)))
+///     })
+///     .unwrap();
+///
+/// assert_eq!(result, result_obj);
+///
+/// //
+/// // skip result
+/// //
+///
+/// let result =
+///     jsonpath::try_replace_with(json_obj.clone(), "$..[?(@.age >= 20)].age", &mut |v| {
+///         let n = if let Value::Number(n) = v {
+///             n.as_u64().unwrap()
+///         } else {
+///             0
+///         };
+///
+///         if n < 30 {
+///             Some(Ok(json!(n * 2)))
+///         } else {
+///             None
+///         }
+///     })
+///     .unwrap();
+///
+/// assert_eq!(result, result_obj);
+///
+/// //
+/// // abort all
+/// //
+///
+/// let result =
+///     jsonpath::try_replace_with(json_obj.clone(), "$..[?(@.age >= 20)].age", &mut |v| {
+///         let n = if let Value::Number(n) = v {
+///             n.as_u64().unwrap()
+///         } else {
+///             0
+///         };
+///
+///         if n < 30 {
+///             Some(Ok(json!(n * 2)))
+///         } else {
+///             Some(Err(JsonPathError::Serde(format!(
+///                 "unexpected value: {}",
+///                 n
+///             ))))
+///         }
+///     });
+///
+/// assert_eq!(result.is_err(), true);
+/// assert_eq!(result.unwrap_err().0, json_obj);
+/// ```
+pub fn try_replace_with<F>(
+    value: Value,
+    path: &str,
+    fun: &mut F,
+) -> Result<Value, (Value, JsonPathError)>
+where
+    F: FnMut(&Value) -> Option<Result<Value, JsonPathError>>,
+{
+    let mut selector = SelectorMut::default();
+    if let Err(e) = selector.str_path(path) {
+        return Err((value, e));
+    }
+
+    let result = selector.value(value).try_replace_with(fun);
+
+    if let Err(e) = result {
+        return Err((selector.take().unwrap(), e));
+    }
+
+    Ok(selector.take().unwrap_or(Value::Null))
 }

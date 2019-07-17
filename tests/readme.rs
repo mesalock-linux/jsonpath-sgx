@@ -6,7 +6,7 @@ extern crate serde_json;
 use serde::Deserialize;
 use serde_json::Value;
 
-use jsonpath::{Selector, SelectorMut};
+use jsonpath::{JsonPathError, Selector, SelectorMut};
 
 mod common;
 
@@ -540,4 +540,96 @@ fn readme_replace_with() {
                 {"name": "친구4"}
         ]})
     );
+}
+
+#[test]
+fn readme_try_replace_with() {
+    //
+    // replace value
+    //
+
+    let json_obj = json!({
+        "school": {
+            "friends": [
+                {"name": "친구1", "age": 20},
+                {"name": "친구2", "age": 20}
+            ]
+        },
+        "friends": [
+            {"name": "친구3", "age": 30},
+            {"name": "친구4"}
+    ]});
+
+    let result_obj = json!({
+        "school": {
+            "friends": [
+                {"name": "친구1", "age": 40},
+                {"name": "친구2", "age": 40}
+            ]
+        },
+        "friends": [
+            {"name": "친구3", "age": 30},
+            {"name": "친구4"}
+    ]});
+
+    let result =
+        jsonpath::try_replace_with(json_obj.clone(), "$..[?(@.age == 20)].age", &mut |v| {
+            let age = if let Value::Number(n) = v {
+                n.as_u64().unwrap() * 2
+            } else {
+                0
+            };
+
+            Some(Ok(json!(age)))
+        })
+        .unwrap();
+
+    assert_eq!(result, result_obj);
+
+    //
+    // skip result
+    //
+
+    let result =
+        jsonpath::try_replace_with(json_obj.clone(), "$..[?(@.age >= 20)].age", &mut |v| {
+            let n = if let Value::Number(n) = v {
+                n.as_u64().unwrap()
+            } else {
+                0
+            };
+
+            if n < 30 {
+                Some(Ok(json!(n * 2)))
+            } else {
+                None
+            }
+        })
+        .unwrap();
+
+    assert_eq!(result, result_obj);
+
+    //
+    // abort all
+    //
+
+    let result =
+        jsonpath::try_replace_with(json_obj.clone(), "$..[?(@.age >= 20)].age", &mut |v| {
+            let n = if let Value::Number(n) = v {
+                n.as_u64().unwrap()
+            } else {
+                0
+            };
+
+            if n < 30 {
+                Some(Ok(json!(n * 2)))
+            } else {
+                Some(Err(JsonPathError::Serde(format!(
+                    "unexpected value: {}",
+                    n
+                ))))
+            }
+        });
+
+    assert_eq!(result.is_err(), true);
+    assert_eq!(result.unwrap_err().0, json_obj);
 }
