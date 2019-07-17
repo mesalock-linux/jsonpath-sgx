@@ -1116,7 +1116,7 @@ impl SelectorMut {
         &mut self,
         mut tokens: Vec<String>,
         fun: &mut F,
-    ) -> Result<Option<(*const Value, String, Value)>, JsonPathError>
+    ) -> Result<Option<(*mut Value, String, Value)>, JsonPathError>
     where
         F: FnMut(&Value) -> Option<Result<Value, JsonPathError>>,
     {
@@ -1126,7 +1126,7 @@ impl SelectorMut {
             loop {
                 let token = tokens.remove(0);
                 let target_once = target;
-                let parent_ptr = target_once as *const Value;
+                let parent_ptr = target_once as *mut Value;
                 let target_opt = match target_once {
                     Value::Object(map) => map.get_mut(&token),
                     Value::Array(vec) => {
@@ -1196,7 +1196,7 @@ impl SelectorMut {
 
         for info in replace_infos {
             if let Some((ptr, token, value)) = info {
-                match unsafe { std::mem::transmute::<*const Value, &mut Value>(ptr) } {
+                match unsafe { &mut *ptr } {
                     Value::Object(ref mut map) => {
                         map.insert(token, value);
                     }

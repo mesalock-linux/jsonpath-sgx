@@ -69,7 +69,7 @@ fn selector_mut_try_replace_with_err() {
     if let Err(JsonPathError::Serde(s)) = e {
         assert_eq!(s, err_msg);
     } else {
-        assert!(false);
+        panic!(false);
     }
 }
 
@@ -106,7 +106,7 @@ fn selector_mut_try_replace_with_skip() {
                 })
             );
         }
-        _ => assert!(false),
+        _ => panic!(false),
     };
 }
 
