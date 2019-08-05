@@ -60,14 +60,38 @@ fn selector_mut_try_replace_with_err() {
 
     let mut selector = SelectorMut::default();
     let err_msg = "unexpected value";
+    let input = json!({
+            "school": {
+                "friends": [
+                    {"name": "친구1", "age": 20},
+                    {"name": "친구2", "age": 20},
+                ],
+            },
+            "friends": [
+                {"name": "친구3", "age": 30},
+                {"name": "친구4"},
+            ],
+        });
     let e = selector
-        .str_path("$.a")
+        .str_path("$..friends.*")
         .unwrap()
-        .value(json!({ "a": 1 }))
-        .try_replace_with(&mut |_| Some(Err(JsonPathError::Serde(err_msg.to_string()))));
+        .value(input.clone())
+        .try_replace_with(&mut |v| {
+            match v.get("age") {
+                Some(Value::Number(age)) if age.is_u64() => {
+                    let mut v = v.clone();
+                    if let Value::Object(map) = &mut v {
+                        map.insert("age".to_string(), json!(age.as_u64()));
+                    }
+                    return Some(Ok(v));
+                }
+                _ => Some(Err(JsonPathError::Unexpected(err_msg.to_string())))
+            }
+        });
 
-    if let Err(JsonPathError::Serde(s)) = e {
+    if let Err(JsonPathError::Unexpected(s)) = e {
         assert_eq!(s, err_msg);
+        assert_eq!(selector.take().unwrap(), input);
     } else {
         panic!(false);
     }

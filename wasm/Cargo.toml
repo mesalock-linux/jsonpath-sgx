@@ -3,7 +3,7 @@ name = "jsonpath-wasm"
 version = "0.2.3"
 authors = ["Changseok Han <freestrings@gmail.com>"]
 description = "It is Webassembly version of jsonpath_lib that is JsonPath engine written in Rust - Demo: https://freestrings.github.io/jsonpath"
-keywords = ["jsonpath", "json", "webassembly", "parsing", "rust"]
+keywords = ["jsonpath", "json", "webassembly", "query", "rust"]
 repository = "https://github.com/freestrings/jsonpath"
 license = "MIT"
 

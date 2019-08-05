@@ -894,6 +894,62 @@ describe('README test', () => {
             done();
         }
     });
+
+    it('jsonpath.tryReplaceWith (json: string|object, path: string, fun: function(json: object) => json: object|undefined|null', (done) => {
+        let jsonObj = {
+            'school': {
+                'friends': [
+                    {'name': '친구1', 'age': 20},
+                    {'name': '친구2', 'age': 20},
+                ],
+            },
+            'friends': [
+                {'name': '친구3', 'age': 30},
+                {'name': '친구4'},
+            ],
+        };
+
+        let jsonObjCopy = JSON.parse(JSON.stringify(jsonObj));
+        let errMessage = "Empty age";
+
+        let result1 = jsonpath.tryReplaceWith(jsonObj, '$..friends.*', (v) => {
+            if(!v.age) {
+                throw Error(errMessage);
+            } else {
+                v.age = v.age + 1;
+                return v;
+            }
+        });
+
+        let abortTrue = result1 === `\"${errMessage}"`;
+        let abortResult = JSON.stringify(jsonObj) === JSON.stringify(jsonObjCopy);
+
+        let result2 = jsonpath.tryReplaceWith(jsonObj, '$..friends.*', (v) => {
+            if(!v.age) {
+                v.age = 100;
+                return v;
+            } else {
+               return null;
+            }
+        });
+
+        if (abortTrue &&
+            abortResult &&
+            JSON.stringify(result2) === JSON.stringify({
+            'school': {
+                'friends': [
+                    {'name': '친구1', 'age': 20},
+                    {'name': '친구2', 'age': 20},
+                ],
+            },
+            'friends': [
+                {'name': '친구3', 'age': 30},
+                {'name': '친구4', 'age': 100},
+            ],
+        })) {
+            done();
+        }
+    });
 });
 
 describe('ISSUE test', () => {

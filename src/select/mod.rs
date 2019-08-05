@@ -445,6 +445,7 @@ pub enum JsonPathError {
     EmptyValue,
     Path(String),
     Serde(String),
+    Unexpected(String),
 }
 
 impl fmt::Debug for JsonPathError {
@@ -460,6 +461,7 @@ impl fmt::Display for JsonPathError {
             JsonPathError::EmptyValue => f.write_str("json value not set"),
             JsonPathError::Path(msg) => f.write_str(&format!("path error: \n{}\n", msg)),
             JsonPathError::Serde(msg) => f.write_str(&format!("serde error: \n{}\n", msg)),
+            JsonPathError::Unexpected(msg) => f.write_str(&format!("unknown error: \n{}\n", msg)),
         }
     }
 }

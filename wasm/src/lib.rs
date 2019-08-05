@@ -78,6 +78,34 @@ fn replace_fun(v: &Value, fun: &js_sys::Function) -> Value {
     }
 }
 
+fn try_replace_fun(v: &Value, fun: &js_sys::Function) -> Option<Result<Value, JsonPathError>> {
+    match JsValue::from_serde(v) {
+        Ok(js_v) => match fun.call1(&JsValue::NULL, &js_v) {
+            Ok(result) => {
+                if result.is_undefined() || result.is_null() {
+                    return None;
+                }
+
+                match into_serde_json(&result) {
+                    Ok(json) => Some(Ok(json)),
+                    Err(e) => Some(Err(JsonPathError::Serde(e))),
+                }
+            }
+            Err(e) => {
+                let err_msg = if e.is_string() {
+                    e.as_string().unwrap()
+                } else {
+                    let e_obj: js_sys::Error = js_sys::Error::from(e);
+                    format!("{:?}", e_obj.message())
+                };
+
+                Some(Err(JsonPathError::Unexpected(err_msg)))
+            }
+        },
+        Err(e) => Some(Err(JsonPathError::Serde(e.to_string()))),
+    }
+}
+
 #[wasm_bindgen]
 pub fn compile(path: &str) -> JsValue {
     let node = Parser::compile(path);
@@ -185,6 +213,31 @@ pub fn replace_with(js_value: JsValue, path: &str, fun: js_sys::Function) -> JsV
             Err(e) => JsValue::from_str(&format!("{:?}", JsonPathError::Serde(e.to_string()))),
         },
         Err(e) => JsValue::from_str(&format!("{:?}", e)),
+    }
+}
+
+#[wasm_bindgen(catch, js_name = "tryReplaceWith")]
+pub fn try_replace_with(js_value: JsValue, path: &str, fun: js_sys::Function) -> JsValue {
+    let json = match into_serde_json(&js_value) {
+        Ok(json) => json,
+        Err(e) => return JsValue::from_str(&format!("{:?}", JsonPathError::Serde(e))),
+    };
+
+    match jsonpath::try_replace_with(json, path, &mut |v| try_replace_fun(v, &fun)) {
+        Ok(ret) => match JsValue::from_serde(&ret) {
+            Ok(ret) => ret,
+            Err(e) => JsValue::from_str(&format!("{:?}", JsonPathError::Serde(e.to_string()))),
+        },
+        Err((_, e)) => {
+            let msg = match e {
+                JsonPathError::EmptyPath | JsonPathError::EmptyValue => format!("{:?}", e),
+                JsonPathError::Unexpected(msg)
+                | JsonPathError::Path(msg)
+                | JsonPathError::Serde(msg) => msg,
+            };
+            let e = js_sys::Error::new(&msg);
+            e.message().into()
+        }
     }
 }
 
