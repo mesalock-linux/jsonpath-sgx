@@ -416,7 +416,7 @@ pub fn delete(value: Value, path: &str) -> Result<Value, JsonPathError> {
     Ok(value.take().unwrap_or(Value::Null))
 }
 
-/// Select JSON properties using a jsonpath and transform the result and then replace it. via closure that implements `FnMut` you can transform the selected results.
+/// This function transform the selected value. the closure receive a selected value via `jsonpath` as input argument and can return a transformed value.
 ///
 /// ```rust
 /// extern crate jsonpath_lib as jsonpath;
@@ -467,8 +467,11 @@ where
     Ok(selector.take().unwrap_or(Value::Null))
 }
 
-/// Select JSON properties using a jsonpath and transform the result and then replace it. via closure that implements `FnMut` you can transform the selected results.
-/// but it is different with `replace_with` function. it support to skip or to abort. if return `None` keep the selected value, if return `Err` abort all replacement.
+/// This is the same with `replace_with`. you can transform the selected value.
+///
+/// but it has the different type of closure argument. if this closure return a `None`, keep the selected value. if this closure return `Err`, abort all the transform operation.
+///
+/// the error result of `try_replace_with` is a tuple. the first value of this error tuple is the same with the original input value.
 ///
 /// ```rust
 /// extern crate jsonpath_lib as jsonpath;
@@ -476,7 +479,7 @@ where
 ///
 /// use serde_json::Value;
 /// use jsonpath::JsonPathError;
-/// 
+///
 /// //
 /// // replace value
 /// //
@@ -564,7 +567,7 @@ where
 ///     });
 ///
 /// assert_eq!(result.is_err(), true);
-/// assert_eq!(result.unwrap_err().0, json_obj);
+/// assert_eq!(&result.unwrap_err().0, &json_obj);
 /// ```
 pub fn try_replace_with<F>(
     value: Value,

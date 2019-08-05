@@ -631,5 +631,5 @@ fn readme_try_replace_with() {
         });
 
     assert_eq!(result.is_err(), true);
-    assert_eq!(result.unwrap_err().0, json_obj);
+    assert_eq!(&result.unwrap_err().0, &json_obj);
 }
