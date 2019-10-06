@@ -173,7 +173,7 @@ pub fn compile(path: &str) -> impl FnMut(&Value) -> Result<Vec<&Value>, JsonPath
     move |json| match &node {
         Ok(node) => {
             let mut selector = Selector::default();
-            selector.compiled_path(node).value(json).select()
+            selector.set_node_ref(node).value(json).select()
         }
         Err(e) => Err(JsonPathError::Path(e.to_string())),
     }
@@ -217,7 +217,7 @@ pub fn compile(path: &str) -> impl FnMut(&Value) -> Result<Vec<&Value>, JsonPath
 pub fn selector<'a>(json: &'a Value) -> impl FnMut(&str) -> Result<Vec<&'a Value>, JsonPathError> {
     let mut selector = Selector::default();
     let _ = selector.value(json);
-    move |path: &str| selector.str_path(path)?.reset_value().select()
+    move |path: &str| selector.str_path(path)?.clear().select()
 }
 
 /// It is the same to `selector` function. but it deserialize the result as given type `T`.
@@ -271,7 +271,7 @@ pub fn selector_as<T: serde::de::DeserializeOwned>(
 ) -> impl FnMut(&str) -> Result<Vec<T>, JsonPathError> + '_ {
     let mut selector = Selector::default();
     let _ = selector.value(json);
-    move |path: &str| selector.str_path(path)?.reset_value().select_as()
+    move |path: &str| selector.str_path(path)?.clear().select_as()
 }
 
 /// It is a simple select function. but it compile the jsonpath argument every time.

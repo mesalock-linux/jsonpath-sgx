@@ -58,7 +58,7 @@ fn selector_mut() {
 fn selector_node_ref() {
     let node = Parser::compile("$.*").unwrap();
     let mut selector = Selector::default();
-    selector.compiled_path(&node);
+    selector.set_node_ref(&node);
     assert!(std::ptr::eq(selector.node_ref().unwrap(), &node));
 }
 

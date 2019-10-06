@@ -468,14 +468,43 @@ impl fmt::Display for JsonPathError {
 }
 
 #[derive(Debug, Default)]
-pub struct Selector<'a, 'b> {
+struct NodeWrap<'a> {
     node: Option<Node>,
-    node_ref: Option<&'b Node>,
+    node_ref: Option<&'a Node>,
+}
+
+impl<'a> NodeWrap<'a> {
+    pub fn node_ref(&self) -> Option<&Node> {
+        if let Some(node) = &self.node {
+            return Some(node);
+        }
+
+        if let Some(node) = self.node_ref {
+            return Some(node);
+        }
+
+        None
+    }
+
+    pub fn set_node_ref(&mut self, node: &'a Node) -> &mut Self {
+        self.node.take();
+        self.node_ref = Some(node);
+        self
+    }
+
+    pub fn set_node(&mut self, node: Node) -> &mut Self {
+        self.node_ref.take();
+        self.node = Some(node);
+        self
+    }
+
+}
+
+#[derive(Debug, Default)]
+pub struct Selector<'a, 'b> {
+    node_wrap: NodeWrap<'b>,
     value: Option<&'a Value>,
-    tokens: Vec<ParseToken>,
-    terms: Vec<Option<ExprTerm<'a>>>,
-    current: Option<Vec<&'a Value>>,
-    selectors: Vec<Selector<'a, 'b>>,
+    node_visitor: NodeVisitorImpl<'a>,
 }
 
 impl<'a, 'b> Selector<'a, 'b> {
@@ -485,61 +514,58 @@ impl<'a, 'b> Selector<'a, 'b> {
 
     pub fn str_path(&mut self, path: &str) -> Result<&mut Self, JsonPathError> {
         debug!("path : {}", path);
-        self.node_ref.take();
-        self.node = Some(Parser::compile(path).map_err(JsonPathError::Path)?);
+        self.node_wrap.set_node(Parser::compile(path).map_err(JsonPathError::Path)?);
         Ok(self)
     }
 
     pub fn node_ref(&self) -> Option<&Node> {
-        if let Some(node) = &self.node {
-            return Some(node);
-        }
-
-        if let Some(node) = &self.node_ref {
-            return Some(*node);
-        }
-
-        None
+        self.node_wrap.node_ref()
     }
 
+    pub fn set_node_ref(&mut self, node: &'b Node) -> &mut Self {
+        self.node_wrap.set_node_ref(node);
+        self
+    }
+
+    #[deprecated(
+        since = "0.3.0",
+        note = "Please use the set_node_ref function instead"
+    )]
     pub fn compiled_path(&mut self, node: &'b Node) -> &mut Self {
-        self.node.take();
-        self.node_ref = Some(node);
+        self.set_node_ref(node)
+    }
+
+    pub fn clear(&mut self) -> &mut Self {
+        self.node_visitor.clear();
         self
     }
 
+    #[deprecated(
+        since = "0.3.0",
+        note = "Please use the clear function instead"
+    )]
     pub fn reset_value(&mut self) -> &mut Self {
-        self.current = None;
-        self
+        self.clear()
     }
 
     pub fn value(&mut self, v: &'a Value) -> &mut Self {
-        self.value = Some(v);
+        self.node_visitor.value = Some(v);
         self
     }
 
     fn _select(&mut self) -> Result<(), JsonPathError> {
-        if self.node_ref.is_some() {
-            let node_ref = self.node_ref.take().unwrap();
-            self.visit(node_ref);
+        if let Some(node) = self.node_wrap.node_ref() {
+            self.node_visitor.visit(node);
             return Ok(());
         }
 
-        if self.node.is_none() {
-            return Err(JsonPathError::EmptyPath);
-        }
-
-        let node = self.node.take().unwrap();
-        self.visit(&node);
-        self.node = Some(node);
-
-        Ok(())
+        return Err(JsonPathError::EmptyPath);
     }
 
     pub fn select_as<T: serde::de::DeserializeOwned>(&mut self) -> Result<Vec<T>, JsonPathError> {
         self._select()?;
 
-        match &self.current {
+        match &self.node_visitor.current {
             Some(vec) => {
                 let mut ret = Vec::new();
                 for v in vec {
@@ -557,7 +583,7 @@ impl<'a, 'b> Selector<'a, 'b> {
     pub fn select_as_str(&mut self) -> Result<String, JsonPathError> {
         self._select()?;
 
-        match &self.current {
+        match &self.node_visitor.current {
             Some(r) => {
                 Ok(serde_json::to_string(r).map_err(|e| JsonPathError::Serde(e.to_string()))?)
             }
@@ -568,10 +594,28 @@ impl<'a, 'b> Selector<'a, 'b> {
     pub fn select(&mut self) -> Result<Vec<&'a Value>, JsonPathError> {
         self._select()?;
 
-        match &self.current {
+        match &self.node_visitor.current {
             Some(r) => Ok(r.to_vec()),
             _ => Err(JsonPathError::EmptyValue),
         }
+    }
+}
+
+#[derive(Debug, Default)]
+struct NodeVisitorImpl<'a> {
+    value: Option<&'a Value>,
+    tokens: Vec<ParseToken>,
+    terms: Vec<Option<ExprTerm<'a>>>,
+    current: Option<Vec<&'a Value>>,
+    visitors: Vec<NodeVisitorImpl<'a>>,
+}
+
+impl<'a> NodeVisitorImpl<'a> {
+    fn clear(&mut self) {
+        self.tokens.clear();
+        self.terms.clear();
+        self.current = None;
+        self.visitors.clear();
     }
 
     fn new_filter_context(&mut self) {
@@ -755,15 +799,15 @@ impl<'a, 'b> Selector<'a, 'b> {
     }
 
     fn compute_absolute_path_filter(&mut self, token: &ParseToken) -> bool {
-        if !self.selectors.is_empty() {
+        if !self.visitors.is_empty() {
             match token {
                 ParseToken::Absolute | ParseToken::Relative | ParseToken::Filter(_) => {
-                    let selector = self.selectors.pop().unwrap();
+                    let visitor = self.visitors.pop().unwrap();
 
-                    if let Some(current) = &selector.current {
+                    if let Some(current) = &visitor.current {
                         let term = current.into();
 
-                        if let Some(s) = self.selectors.last_mut() {
+                        if let Some(s) = self.visitors.last_mut() {
                             s.terms.push(Some(term));
                         } else {
                             self.terms.push(Some(term));
@@ -776,24 +820,22 @@ impl<'a, 'b> Selector<'a, 'b> {
             }
         }
 
-        if let Some(selector) = self.selectors.last_mut() {
-            selector.visit_token(token);
+        if let Some(visitor) = self.visitors.last_mut() {
+            visitor.visit_token(token);
             true
         } else {
             false
         }
     }
-}
 
-impl<'a, 'b> Selector<'a, 'b> {
     fn visit_absolute(&mut self) {
         if self.current.is_some() {
-            let mut selector = Selector::default();
+            let mut visitor = NodeVisitorImpl::default();
 
             if let Some(value) = self.value {
-                selector.value = Some(value);
-                selector.current = Some(vec![value]);
-                self.selectors.push(selector);
+                visitor.value = Some(value);
+                visitor.current = Some(vec![value]);
+                self.visitors.push(visitor);
             }
             return;
         }
@@ -1010,7 +1052,7 @@ impl<'a, 'b> Selector<'a, 'b> {
     }
 }
 
-impl<'a, 'b> NodeVisitor for Selector<'a, 'b> {
+impl<'a> NodeVisitor for NodeVisitorImpl<'a> {
     fn visit_token(&mut self, token: &ParseToken) {
         debug!("token: {:?}, stack: {:?}", token, self.tokens);
 
@@ -1201,7 +1243,7 @@ impl SelectorMut {
     fn select(&self) -> Result<Vec<&Value>, JsonPathError> {
         if let Some(node) = &self.path {
             let mut selector = Selector::default();
-            selector.compiled_path(&node);
+            selector.set_node_ref(&node);
 
             if let Some(value) = &self.value {
                 selector.value(value);
