@@ -12,7 +12,7 @@ crate-type = ["staticlib"]
 default = []
 
 [dependencies]
-jsonpath_lib = { path = "../../../../jsonpath-sgx"}
+jsonpath_lib = { path = "../../.."}
 log = { git = "https://github.com/mesalock-linux/log-sgx" }
 serde = { git = "https://github.com/mesalock-linux/serde-sgx", features = ["derive"] }
 serde_json = { git = "https://github.com/mesalock-linux/serde-json-sgx", features = ["preserve_order"] }
